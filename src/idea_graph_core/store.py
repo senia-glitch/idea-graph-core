@@ -31,7 +31,7 @@ from .model import (
 )
 
 FORMAT = 1
-DIR_NAME = ".ideagraph"
+DIR_NAME = ".idea-graph"
 _STAMPS = ("updated_rev", "human_rev")
 
 
@@ -51,7 +51,7 @@ def _same(a: dict | None, b: dict | None) -> bool:
 
 
 class Store:
-    """Граф одной идеи в папке ``<папка>/.ideagraph``."""
+    """Граф одной идеи в папке ``<папка>/.idea-graph``."""
 
     def __init__(self, folder: str | os.PathLike):
         self.folder = Path(folder)

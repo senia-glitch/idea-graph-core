@@ -1,6 +1,6 @@
 import pytest
 
-from ideagraph_core import ACCEPTED, DETAIL, HUMAN, PROPOSED, ConflictError, GraphError, Store, views
+from idea_graph_core import ACCEPTED, DETAIL, HUMAN, PROPOSED, ConflictError, GraphError, Store, views
 
 AGENT = "package:clarify"
 
