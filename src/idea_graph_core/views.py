@@ -173,7 +173,8 @@ def card_view(store: Store, card_id: str) -> str:
             for index, option in enumerate(decision.get("options") or [], 1):
                 lines.append(f"  вариант {index}: {option}")
             chosen = decision.get("chosen") or {}
-            lines.append(f"  выбрано: {chosen.get('type', '')} {chosen.get('value', '')}".rstrip())
+            lines.append("  выбрано: " + ("все варианты отклонены" if chosen.get("type") == "rejected"
+                                           else str(chosen.get("value", ""))))
             if decision.get("rationale"):
                 lines.append("  обоснование: " + str(decision["rationale"]))
         if card.get("attrs"):
