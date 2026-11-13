@@ -6,7 +6,6 @@ from .model import (
     DETAIL,
     HUMAN,
     PROPOSED,
-    ROOT_KIND,
     STATUS_NAMES,
     STATUSES,
     author_name,
@@ -18,6 +17,6 @@ from . import views
 __version__ = "0.1.0"
 
 __all__ = [
-    "ACCEPTED", "DETAIL", "DIR_NAME", "HUMAN", "PROPOSED", "ROOT_KIND", "STATUSES", "STATUS_NAMES",
+    "ACCEPTED", "DETAIL", "DIR_NAME", "HUMAN", "PROPOSED", "STATUSES", "STATUS_NAMES",
     "ConflictError", "GraphError", "Store", "author_name", "is_human", "views",
 ]

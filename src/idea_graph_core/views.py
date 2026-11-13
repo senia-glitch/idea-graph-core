@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from .model import ACCEPTED, DETAIL, HUMAN, ROOT_KIND, STATUS_NAMES, author_name
+from .model import ACCEPTED, DETAIL, HUMAN, STATUS_NAMES, author_name
 from .store import Store
 
 BODY_PREVIEW = 160
@@ -45,22 +45,6 @@ def dependents(store: Store, card_id: str) -> set[str]:
                 seen.add(other)
                 todo.append(other)
     return seen
-
-
-def unreachable(store: Store) -> list[str]:
-    """Карточки, не связанные с корнем никакой цепочкой связей (направление не важно)."""
-    near: dict[str, set[str]] = {}
-    for edge in store.edges.values():
-        near.setdefault(edge["from"], set()).add(edge["to"])
-        near.setdefault(edge["to"], set()).add(edge["from"])
-    seen = {store.root_id}
-    todo = [store.root_id]
-    while todo:
-        for other in near.get(todo.pop(), ()):
-            if other not in seen:
-                seen.add(other)
-                todo.append(other)
-    return sorted((c for c in store.cards if c not in seen), key=lambda c: int(c[1:]))
 
 
 def detail_cycles(store: Store) -> list[list[str]]:
@@ -112,7 +96,7 @@ def decision_note(card: dict) -> str:
 
 
 def card_line(card: dict, body: bool = True) -> str:
-    kind = "ИДЕЯ" if card["kind"] == ROOT_KIND else card["kind"]
+    kind = card["kind"]
     marks = [STATUS_NAMES.get(card["status"], card["status"])]
     if card.get("author") and card["author"] != HUMAN:
         marks.append("автор: " + author_name(card["author"]))
@@ -130,7 +114,7 @@ def outline(store: Store) -> str:
     """Оглавление графа: дерево по связям «детализирует», затем остальные связи."""
     with store.lock:
         children = children_of(store)
-        lines = [f"Граф идеи · ревизия {store.revision} · карточек {len(store.cards)}"]
+        lines = [f"Граф проекта «{store.title}» · ревизия {store.revision} · карточек {len(store.cards)}"]
         shown: set[str] = set()
 
         def walk(card_id: str, depth: int) -> None:
@@ -143,10 +127,13 @@ def outline(store: Store) -> str:
             for child in children.get(card_id, []):
                 walk(child, depth + 1)
 
-        walk(store.root_id, 0)
+        parents = parents_of(store)
+        for card_id in sorted(store.cards, key=lambda c: int(c[1:])):
+            if not parents.get(card_id):        # верхний уровень: карточки без родителя
+                walk(card_id, 0)
         rest = [c for c in sorted(store.cards, key=lambda c: int(c[1:])) if c not in shown]
         if rest:
-            lines.append("Вне дерева (нет пути «детализирует» до идеи):")
+            lines.append("Вне дерева (замкнутые цепочки «детализирует»):")
             for card_id in rest:
                 if card_id not in shown:
                     walk(card_id, 1)

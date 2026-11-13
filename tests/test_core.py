@@ -7,7 +7,10 @@ AGENT = "package:clarify"
 
 @pytest.fixture
 def store(tmp_path):
-    return Store.create(tmp_path, "Запись к врачу без звонков", "Пациент выбирает время сам")
+    created = Store.create(tmp_path, "Запись к врачу")
+    created.apply([{"op": "add_card", "kind": "ветка", "title": "Запись к врачу без звонков",
+                    "body": "Пациент выбирает время сам"}], HUMAN)
+    return created
 
 
 def add(store, title, parent=None, author=HUMAN, **extra):
@@ -18,12 +21,22 @@ def add(store, title, parent=None, author=HUMAN, **extra):
 
 
 def test_create_and_reopen(store, tmp_path):
-    assert store.revision == 1 and store.root_id == "c1"
+    assert store.revision == 1 and store.title == "Запись к врачу"
     again = Store.open(tmp_path)
+    assert again.title == "Запись к врачу"
     assert again.cards["c1"]["title"] == "Запись к врачу без звонков"
     assert again.cards["c1"]["status"] == ACCEPTED
     with pytest.raises(GraphError):
         Store.create(tmp_path, "ещё одна")
+
+
+def test_new_graph_is_empty_and_has_no_root(tmp_path):
+    empty = Store.create(tmp_path / "p", "Проект")
+    assert empty.revision == 0 and empty.cards == {} and "root" not in empty.snapshot()
+    empty.apply([{"op": "add_card", "kind": "домен", "title": "А"}, {"op": "add_card", "kind": "домен", "title": "Б"}], HUMAN)
+    assert len(Store.open(tmp_path / "p").cards) == 2
+    empty.apply([{"op": "delete_card", "id": "c1"}], HUMAN)      # удалить можно любую карточку
+    assert list(empty.cards) == ["c2"]
 
 
 def test_statuses_default_by_author(store):
@@ -55,10 +68,6 @@ def test_batch_is_atomic_and_refs_work(store):
 
 
 def test_invariants(store):
-    with pytest.raises(GraphError, match="идея"):
-        store.apply([{"op": "add_card", "kind": "идея", "title": "вторая"}], HUMAN)
-    with pytest.raises(GraphError, match="Корневую"):
-        store.apply([{"op": "delete_card", "id": "c1"}], HUMAN)
     card = add(store, "А", "c1")
     with pytest.raises(GraphError, match="уже есть"):
         store.apply([{"op": "add_edge", "from": card, "to": "c1", "kind": DETAIL}], HUMAN)
@@ -132,12 +141,11 @@ def test_attrs_merge_and_no_empty_revision(store):
 def test_views(store):
     branch = add(store, "Функции", "c1", kind="ветка")
     leaf = add(store, "Онлайн-запись", branch, author=AGENT, body="Пациент видит свободные окна")
-    lone = add(store, "Сирота")
+    add(store, "Сирота")
     store.apply([{"op": "add_edge", "from": leaf, "to": "c1", "kind": "уточняет"}], HUMAN)
     text = views.outline(store)
     assert text.index("Функции") < text.index("Онлайн-запись")
-    assert "Вне дерева" in text and "—уточняет→" in text and "предложена" in text
-    assert views.unreachable(store) == [lone]
+    assert "Сирота" in text and "—уточняет→" in text and "предложена" in text and "Запись к врачу" in text.splitlines()[0]
     assert views.dependents(store, "c1") == {branch, leaf}
     assert "Связи:" in views.card_view(store, leaf)
     store.apply([{"op": "add_edge", "from": branch, "to": leaf, "kind": DETAIL}], HUMAN)

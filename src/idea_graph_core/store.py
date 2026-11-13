@@ -5,7 +5,7 @@
 можно спросить «что изменилось с ревизии N», отменить ревизию и показать историю карточки.
 
 Правила, которые проверяет само ядро (остальное — дело пакета проверки):
-один корень, связи ведут к существующим карточкам, идентификаторы не повторяются и
+связи ведут к существующим карточкам, идентификаторы не повторяются и
 не используются заново, правка человека главнее правки агента.
 """
 
@@ -24,7 +24,6 @@ from .model import (
     DETAIL,
     HUMAN,
     PROPOSED,
-    ROOT_KIND,
     clean_card_fields,
     clean_edge_kind,
     is_human,
@@ -51,7 +50,7 @@ def _same(a: dict | None, b: dict | None) -> bool:
 
 
 class Store:
-    """Граф одной идеи в папке ``<папка>/.idea-graph``."""
+    """Граф одного проекта в папке ``<папка>/.idea-graph``."""
 
     def __init__(self, folder: str | os.PathLike):
         self.folder = Path(folder)
@@ -66,25 +65,17 @@ class Store:
         return (Path(folder) / DIR_NAME / "graph.json").is_file()
 
     @classmethod
-    def create(cls, folder: str | os.PathLike, title: str, body: str = "") -> "Store":
-        """Создать граф с одной корневой карточкой — исходной идеей."""
+    def create(cls, folder: str | os.PathLike, title: str = "") -> "Store":
+        """Создать пустой граф проекта. Корневой карточки нет: граф растёт с карточек верхнего уровня."""
         if cls.exists(folder):
-            raise GraphError("already_exists", "В этой папке уже есть граф идеи")
+            raise GraphError("already_exists", "В этой папке уже есть граф")
         store = cls(folder)
         store.dir.mkdir(parents=True, exist_ok=True)
         store._state = {
-            "format": FORMAT, "revision": 0, "next_card": 1, "next_edge": 1,
-            "cards": {}, "edges": {},
+            "format": FORMAT, "title": str(title or "").strip()[:200], "revision": 0,
+            "next_card": 1, "next_edge": 1, "cards": {}, "edges": {},
         }
-        fields = clean_card_fields(
-            {"kind": ROOT_KIND, "title": title, "body": body, "status": ACCEPTED}, partial=False
-        )
-
-        def make(work: dict) -> dict:
-            store._new_card(work, fields, HUMAN)
-            return {}
-
-        store._transaction(HUMAN, "создана идея", make)
+        store._save(store._state)
         return store
 
     @classmethod
@@ -94,11 +85,12 @@ class Store:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            raise GraphError("not_found", "В этой папке нет графа идеи") from None
+            raise GraphError("not_found", "В этой папке нет графа") from None
         except ValueError as error:
             raise GraphError("broken_file", f"Файл графа повреждён: {error}") from None
         store._state = {
             "format": raw.get("format", FORMAT),
+            "title": str(raw.get("title") or ""),
             "revision": int(raw.get("revision", 0)),
             "next_card": int(raw.get("next_card", 1)),
             "next_edge": int(raw.get("next_edge", 1)),
@@ -122,11 +114,8 @@ class Store:
         return self._state["edges"]
 
     @property
-    def root_id(self) -> str:
-        for card in self.cards.values():
-            if card["kind"] == ROOT_KIND:
-                return card["id"]
-        raise GraphError("no_root", "В графе нет корневой карточки")
+    def title(self) -> str:
+        return self._state.get("title", "")
 
     def card(self, card_id: str) -> dict:
         try:
@@ -139,7 +128,7 @@ class Store:
         with self.lock:
             return {
                 "revision": self.revision,
-                "root": self.root_id,
+                "title": self.title,
                 "cards": copy.deepcopy(list(self.cards.values())),
                 "edges": copy.deepcopy(list(self.edges.values())),
             }
@@ -324,7 +313,7 @@ class Store:
 
     def _save(self, state: dict) -> None:
         data = {
-            "format": FORMAT, "revision": state["revision"], "next_card": state["next_card"],
+            "format": FORMAT, "title": state.get("title", ""), "revision": state["revision"], "next_card": state["next_card"],
             "next_edge": state["next_edge"],
             "cards": sorted(state["cards"].values(), key=lambda c: int(c["id"][1:])),
             "edges": sorted(state["edges"].values(), key=lambda e: int(e["id"][1:])),
@@ -333,9 +322,6 @@ class Store:
 
     @staticmethod
     def _check(work: dict) -> None:
-        roots = [c for c in work["cards"].values() if c["kind"] == ROOT_KIND]
-        if len(roots) != 1:
-            raise GraphError("root_rule", "В графе должна быть ровно одна карточка вида «идея»")
         seen = set()
         for edge in work["edges"].values():
             if edge["from"] not in work["cards"] or edge["to"] not in work["cards"]:
@@ -393,8 +379,6 @@ class Store:
             raw = {k: op[k] for k in ("kind", "title", "body", "status", "decision", "attrs") if k in op}
             raw.setdefault("status", ACCEPTED if is_human(author) else PROPOSED)
             fields = clean_card_fields(raw, partial=False)
-            if fields["kind"] == ROOT_KIND:
-                raise GraphError("root_rule", "Вторая карточка вида «идея» не допускается")
             card = self._new_card(work, fields, author)
             ids.append(card["id"])
             if op.get("ref"):
@@ -410,8 +394,6 @@ class Store:
             guard(card)
             raw = {k: op[k] for k in ("kind", "title", "body", "status", "decision") if k in op}
             fields = clean_card_fields(raw, partial=True)
-            if "kind" in fields and (fields["kind"] == ROOT_KIND) != (card["kind"] == ROOT_KIND):
-                raise GraphError("root_rule", "Вид «идея» есть только у корня и не меняется")
             card.update(fields)
             if isinstance(op.get("attrs"), dict):
                 attrs = dict(card.get("attrs") or {})
@@ -423,8 +405,6 @@ class Store:
                 card["attrs"] = attrs
         elif name == "delete_card":
             card = existing("cards", op.get("id"), "карточка")
-            if card["kind"] == ROOT_KIND:
-                raise GraphError("root_rule", "Корневую карточку удалить нельзя")
             guard(card)
             del work["cards"][card["id"]]
             for edge in [e for e in work["edges"].values() if card["id"] in (e["from"], e["to"])]:

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from .errors import GraphError
 
-ROOT_KIND = "идея"            # единственный зарезервированный вид карточки
 DETAIL = "детализирует"       # связь «потомок детализирует родителя»: из неё строится дерево
 
 PROPOSED = "proposed"         # «предложена» — ждёт решения человека
